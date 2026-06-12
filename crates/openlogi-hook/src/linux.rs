@@ -91,6 +91,10 @@ pub(crate) fn stop(inner: HookInner) {
     shutdown(&inner.stop, &inner.stop_pipes, inner.threads);
 }
 
+pub(crate) fn is_alive(inner: &HookInner) -> bool {
+    inner.threads.iter().all(|thread| !thread.is_finished())
+}
+
 fn shutdown(stop: &AtomicBool, pipes: &[OwnedFd], threads: Vec<thread::JoinHandle<()>>) {
     stop.store(true, Ordering::Relaxed);
     for fd in pipes {

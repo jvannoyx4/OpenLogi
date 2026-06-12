@@ -142,6 +142,7 @@ async fn manage(
     capture_idle: Arc<AtomicBool>,
 ) {
     let (tx, mut rx) = mpsc::unbounded_channel::<CapturedInput>();
+    let (ended_tx, mut ended_rx) = mpsc::unbounded_channel::<(DeviceRoute, bool, bool)>();
     // (route, capture_thumbwheel, divert_gesture_button)
     let mut current: Option<(DeviceRoute, bool, bool)> = None;
     let mut stop: Option<oneshot::Sender<()>> = None;
@@ -160,6 +161,14 @@ async fn manage(
                     &capture_channel,
                     &thumbwheel_sensitivity,
                 );
+            }
+            Some(ended) = ended_rx.recv() => {
+                if current.as_ref() == Some(&ended) {
+                    current = None;
+                    stop = None;
+                    capture_idle.store(true, Ordering::Relaxed);
+                    debug!("capture session ended — will retry active device");
+                }
             }
             _ = ticker.tick() => {
                 // While pairing, release the capture session so run_pairing can
@@ -198,7 +207,9 @@ async fn manage(
                 if let Some((route, capture_thumbwheel, divert_gesture_button)) = want {
                     let (stop_tx, stop_rx) = oneshot::channel();
                     let sink = tx.clone();
+                    let ended = ended_tx.clone();
                     let slot = Arc::clone(&capture_channel);
+                    let session = (route.clone(), capture_thumbwheel, divert_gesture_button);
                     tokio::spawn(async move {
                         if let Err(e) = run_capture_session(
                             route,
@@ -212,6 +223,7 @@ async fn manage(
                         {
                             debug!(error = %e, "capture session ended");
                         }
+                        let _ = ended.send(session);
                     });
                     stop = Some(stop_tx);
                 }

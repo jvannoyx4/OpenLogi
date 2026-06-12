@@ -209,6 +209,25 @@ impl Hook {
         match self.never {}
     }
 
+    /// Whether the hook's platform worker threads are still alive.
+    ///
+    /// On Linux a power-cycled mouse closes its `/dev/input/event*` node. The
+    /// corresponding hook thread exits so the agent can notice and reinstall
+    /// the hook against the re-created device node.
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            return self.inner.as_ref().is_some_and(linux::is_alive);
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            return true;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        match self.never {}
+    }
+
     /// Returns `true` when the process has the permissions required to install
     /// the hook.
     ///

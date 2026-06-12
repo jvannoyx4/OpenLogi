@@ -180,6 +180,7 @@ async fn run(config: Config) {
     let mut inventory_rx = watchers::inventory::spawn(Duration::from_secs(2));
     let mut app_rx = watchers::foreground_app::spawn(Duration::from_secs(1));
     let mut accessibility_rx = watchers::accessibility::spawn(Duration::from_millis(1200));
+    let mut hook_health = tokio::time::interval(Duration::from_secs(2));
 
     // IPC server: the GUI connects here for device state + "apply now" commands.
     // The endpoint (Unix socket / Windows named pipe) is resolved inside
@@ -228,6 +229,21 @@ async fn run(config: Config) {
                 }
                 if granted && hook.is_none() {
                     info!("accessibility granted — installing OS mouse hook");
+                    hook = hook_runtime::start(
+                        shared.hook_maps.clone(),
+                        shared.dpi_cycle.clone(),
+                        shared.capture_channel.clone(),
+                    );
+                    hook_installed.store(hook.is_some(), Ordering::Relaxed);
+                }
+            }
+            _ = hook_health.tick() => {
+                if hook.as_ref().is_some_and(|hook| !hook.is_alive()) {
+                    info!("OS mouse hook stopped — reinstalling");
+                    hook = None;
+                    hook_installed.store(false, Ordering::Relaxed);
+                }
+                if Hook::has_accessibility() && hook.is_none() {
                     hook = hook_runtime::start(
                         shared.hook_maps.clone(),
                         shared.dpi_cycle.clone(),
